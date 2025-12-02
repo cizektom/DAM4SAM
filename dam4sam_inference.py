@@ -5,6 +5,7 @@ from dam4sam_tracker import DAM4SAMTracker
 import numpy as np
 import torch
 from typing import Tuple
+from tqdm import tqdm
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -110,7 +111,7 @@ def load_masks_from_dir(input_mask_dir, video_name, frame_name, per_obj_png_file
     return per_obj_input_mask, input_palette
 
 
-def dam4sam_score(selected_eval_file, eval_resolution, skip_frames=0):
+def dam4sam_score(selected_eval_file, eval_resolution, skip_frames=7):
     data_path = "data/datasets/MOSEv2/train"
 
     with open(selected_eval_file, "r") as f:
@@ -145,7 +146,7 @@ def dam4sam_score(selected_eval_file, eval_resolution, skip_frames=0):
             object_steps = 0
             skipped_frames = 0
 
-            for frame_idx, input_img in enumerate(input_imgs[1:]):
+            for frame_idx, input_img in enumerate(tqdm(input_imgs[1:], desc="propagate in video")):
                 pred_mask = predictor.track(input_img)["pred_mask"]
                 if skipped_frames < skip_frames:
                     skipped_frames += 1
@@ -180,7 +181,13 @@ def dam4sam_score(selected_eval_file, eval_resolution, skip_frames=0):
 
 
 def main():
-    selected_eval_file = "sam2rl/configs/datasets/testing.txt"
+    torch.autocast("cuda", dtype=torch.bfloat16).__enter__()
+    # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
+    if torch.cuda.get_device_properties(0).major >= 8:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
+    selected_eval_file = "sam2rl/configs/datasets/valid.txt"
     scores, steps = dam4sam_score(selected_eval_file, eval_resolution=256)
     print(f"DAM4SAM: quality: {scores}, steps: {steps}")
 
